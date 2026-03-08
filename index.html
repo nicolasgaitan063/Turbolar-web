@@ -129,12 +129,11 @@
     </div>
 
     <script>
-        // Configura tu proyecto Firebase aquí (lo obtienes en la consola de Firebase)
         const firebaseConfig = {
             apiKey: "AIzaSyC0hVaOZH9PnjwqCVjSk0i2-E_n2jUw0go",
             authDomain: "web-turbolar.firebaseapp.com",
             projectId: "web-turbolar",
-            storageBucket: "web-turbolar.appspot.com", // corregido
+            storageBucket: "web-turbolar.appspot.com",
             messagingSenderId: "553586882767",
             appId: "1:553586882767:web:a9b360394fa1de53461fba",
             measurementId: "G-7FY19D5VSE"
@@ -143,56 +142,85 @@
         const db = firebase.firestore();
         const storage = firebase.storage();
 
-        // Datos en memoria; la persistencia será en Firestore
         let clientes = [];
-        let servicios = [];
         let pagosEmpleados = [];
         let editingIndex = -1;
+        let editingPagoIndex = -1;
 
-        function updateCounts() {
-            document.getElementById('clientCount').innerText = clientes.length;
-            document.getElementById('serviceCount').innerText = clientes.filter(c => !c.completado).length;
-            const totalGanancia = clientes.filter(c => c.completado).reduce((sum, c) => sum + ((c.montoCobrado || 0) - (c.costoRepuestos || 0)), 0);
-            const totalPagos = pagosEmpleados.reduce((sum, p) => sum + (p.montoPago || 0), 0);
-            document.getElementById('totalIncome').innerText = '$' + (totalGanancia - totalPagos).toFixed(2);
-            document.getElementById('totalPagos').innerText = '$' + totalPagos.toFixed(2);
+        async function loadClientes() {
+            try {
+                const snapshot = await db.collection('clientes').get();
+                clientes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            } catch (e) {
+                console.error('Error cargando clientes:', e);
+            }
+        }
+
+        async function loadPagos() {
+            try {
+                const snapshot = await db.collection('pagos').get();
+                pagosEmpleados = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+            } catch (e) {
+                console.error('Error cargando pagos:', e);
+            }
+        }
+
+        async function updateCounts() {
+            try {
+                await loadClientes();
+                await loadPagos();
+                document.getElementById('clientCount').innerText = clientes.length;
+                document.getElementById('serviceCount').innerText = clientes.filter(c => !c.completado).length;
+                const totalGanancia = clientes.filter(c => c.completado).reduce((sum, c) => sum + ((c.montoCobrado || 0) - (c.costoRepuestos || 0)), 0);
+                const totalPagos = pagosEmpleados.reduce((sum, p) => sum + (p.montoPago || 0), 0);
+                document.getElementById('totalIncome').innerText = '$' + (totalGanancia - totalPagos).toFixed(2);
+                document.getElementById('totalPagos').innerText = '$' + totalPagos.toFixed(2);
+            } catch (e) {
+                console.error('Error actualizando conteos:', e);
+            }
         }
 
         async function showClientes() {
-            await loadClientes();
-            let content = '<h3>Gestión de Clientes</h3>';
-            content += '<input type="text" id="nombreCliente" placeholder="Nombre cliente"><br><br>';
-            content += '<input type="tel" id="telefonoCliente" placeholder="Teléfono"><br><br>';
-            content += '<input type="text" id="tipoAuto" placeholder="Tipo de auto"><br><br>';
-            content += '<input type="text" id="patente" placeholder="Patente del vehículo"><br><br>';
-            content += '<input type="text" id="trabajo" placeholder="Trabajo realizado"><br><br>';
-            content += '<input type="date" id="fechaIngreso" placeholder="Fecha de ingreso"><br><br>';
-            content += '<input type="date" id="fechaSalida" placeholder="Fecha de salida"><br><br>';
-            content += '<input type="file" id="fotoIngreso" accept="image/*"><br><br>';
-            content += '<div id="fotoPreview"></div>';
-            content += '<input type="number" id="costoRepuestos" placeholder="Costo de repuestos" step="0.01"><br><br>';
-            content += '<input type="number" id="montoCobrado" placeholder="Monto cobrado al cliente" step="0.01"><br><br>';
-            content += '<button onclick="agregarOEditarCliente()">' + (editingIndex >= 0 ? 'Guardar Cambios' : 'Agregar Cliente') + '</button>';
-            if (editingIndex >= 0) {
-                content += ' <button onclick="cancelarEdicion()">Cancelar</button>';
-            }
-            content += '<br><br>';
-            content += '<table><tr><th>Nombre</th><th>Teléfono</th><th>Tipo de Auto</th><th>Patente</th><th>Trabajo</th><th>Fecha Ingreso</th><th>Fecha Salida</th><th>Costo Repuestos</th><th>Monto Cobrado</th><th>Ganancia</th><th>Foto</th><th>Completado</th><th>Acciones</th></tr>';
-            clientes.forEach((c, i) => {
-                const ganancia = c.completado ? ((c.montoCobrado || 0) - (c.costoRepuestos || 0)) : 0;
-                const completadoText = c.completado ? 'Sí' : 'No';
-                const toggleText = c.completado ? 'Marcar Pendiente' : 'Marcar Completado';
-                content += `<tr><td>${c.nombre}</td><td>${c.telefono}</td><td>${c.tipoAuto || ''}</td><td>${c.patente || ''}</td><td>${c.trabajo || ''}</td><td>${c.fechaIngreso || ''}</td><td>${c.fechaSalida || ''}</td><td>$${c.costoRepuestos || 0}</td><td>$${c.montoCobrado || 0}</td><td>$${ganancia.toFixed(2)}</td><td>${c.fotoIngreso ? '<img src="' + c.fotoIngreso + '" width="50" height="50">' : 'No'}</td><td>${completadoText}</td><td><button onclick="editarCliente(${i})">Editar</button><br><button onclick="toggleCompletado(${i})">${toggleText}</button><br><button onclick="eliminarCliente(${i})">Eliminar</button><br><button onclick="exportarClientePDF(${i})">Exportar PDF</button></td></tr>`;
-            });
-            content += '</table>';
-            document.getElementById('content').innerHTML = content;
-            if (editingIndex >= 0) {
-                cargarDatosCliente(editingIndex);
+            try {
+                await loadClientes();
+                let content = '<h3>Gestión de Clientes</h3>';
+                content += '<input type="text" id="nombreCliente" placeholder="Nombre cliente"><br>';
+                content += '<input type="tel" id="telefonoCliente" placeholder="Teléfono"><br>';
+                content += '<input type="text" id="tipoAuto" placeholder="Tipo de auto"><br>';
+                content += '<input type="text" id="patente" placeholder="Patente del vehículo"><br>';
+                content += '<input type="text" id="trabajo" placeholder="Trabajo realizado"><br>';
+                content += '<input type="date" id="fechaIngreso" placeholder="Fecha de ingreso"><br>';
+                content += '<input type="date" id="fechaSalida" placeholder="Fecha de salida"><br>';
+                content += '<input type="file" id="fotoIngreso" accept="image/*"><br>';
+                content += '<div id="fotoPreview"></div>';
+                content += '<input type="number" id="costoRepuestos" placeholder="Costo de repuestos" step="0.01"><br>';
+                content += '<input type="number" id="montoCobrado" placeholder="Monto cobrado al cliente" step="0.01"><br>';
+                content += '<button onclick="agregarOEditarCliente()">' + (editingIndex >= 0 ? 'Guardar Cambios' : 'Agregar Cliente') + '</button>';
+                if (editingIndex >= 0) {
+                    content += ' <button onclick="cancelarEdicionCliente()">Cancelar</button>';
+                }
+                content += '<br><br>';
+                content += '<table><tr><th>Nombre</th><th>Tel</th><th>Tipo Auto</th><th>Patente</th><th>Trabajo</th><th>F.Ingreso</th><th>F.Salida</th><th>Costo</th><th>Monto</th><th>Ganancia</th><th>Foto</th><th>Completado</th><th>Acciones</th></tr>';
+                
+                clientes.forEach((c, i) => {
+                    const ganancia = c.completado ? ((c.montoCobrado || 0) - (c.costoRepuestos || 0)) : 0;
+                    const completadoText = c.completado ? 'Sí' : 'No';
+                    const toggleText = c.completado ? 'Pendiente' : 'Completado';
+                    const fotoHtml = c.fotoIngreso ? '<img src="' + c.fotoIngreso + '" width="40" height="40">' : 'No';
+                    content += '<tr><td>' + c.nombre + '</td><td>' + c.telefono + '</td><td>' + (c.tipoAuto || '') + '</td><td>' + (c.patente || '') + '</td><td>' + (c.trabajo || '') + '</td><td>' + (c.fechaIngreso || '') + '</td><td>' + (c.fechaSalida || '') + '</td><td>$' + (c.costoRepuestos || 0) + '</td><td>$' + (c.montoCobrado || 0) + '</td><td>$' + ganancia.toFixed(2) + '</td><td>' + fotoHtml + '</td><td>' + completadoText + '</td><td><button onclick="editarCliente(' + i + ')">Edit</button> <button onclick="toggleCompletado(' + i + ')">' + toggleText + '</button> <button onclick="eliminarCliente(' + i + ')">Del</button> <button onclick="exportarClientePDF(' + i + ')">PDF</button></td></tr>';
+                });
+                content += '</table>';
+                document.getElementById('content').innerHTML = content;
+                
+                if (editingIndex >= 0) {
+                    cargarDatosCliente(editingIndex);
+                }
+            } catch (e) {
+                console.error('Error en showClientes:', e);
             }
         }
 
         async function agregarOEditarCliente() {
-            console.log('agregarOEditarCliente called');
             try {
                 const nombre = document.getElementById('nombreCliente').value.trim();
                 const telefono = document.getElementById('telefonoCliente').value.trim();
@@ -202,52 +230,55 @@
                 const fechaIngreso = document.getElementById('fechaIngreso').value;
                 const fechaSalida = document.getElementById('fechaSalida').value;
 
-            if (!nombre || !telefono || !tipoAuto || !trabajo || !fechaIngreso) {
-                alert("Por favor, complete todos los campos obligatorios: Nombre, Teléfono, Tipo de Auto, Trabajo y Fecha de Ingreso.");
-                return;
-            }
+                if (!nombre || !telefono || !tipoAuto || !trabajo || !fechaIngreso) {
+                    alert("Por favor, complete los campos obligatorios");
+                    return;
+                }
 
-            if (fechaSalida && fechaIngreso && new Date(fechaSalida) <= new Date(fechaIngreso)) {
-                alert("La fecha de salida debe ser posterior a la fecha de ingreso.");
-                return;
-            }
+                if (fechaSalida && fechaIngreso && new Date(fechaSalida) <= new Date(fechaIngreso)) {
+                    alert("La fecha de salida debe ser posterior a la fecha de ingreso");
+                    return;
+                }
 
-            const fileInput = document.getElementById('fotoIngreso');
-            let fotoIngreso = null;
-            if (fileInput.files[0]) {
-                fotoIngreso = await new Promise((resolve) => {
-                    const reader = new FileReader();
-                    reader.onload = (e) => resolve(e.target.result);
-                    reader.readAsDataURL(fileInput.files[0]);
-                });
-            } else if (editingIndex >= 0) {
-                fotoIngreso = clientes[editingIndex].fotoIngreso;
-            }
+                const fileInput = document.getElementById('fotoIngreso');
+                let fotoIngreso = null;
+                if (fileInput && fileInput.files && fileInput.files[0]) {
+                    fotoIngreso = await new Promise((resolve) => {
+                        const reader = new FileReader();
+                        reader.onload = (e) => resolve(e.target.result);
+                        reader.readAsDataURL(fileInput.files[0]);
+                    });
+                } else if (editingIndex >= 0 && clientes[editingIndex]) {
+                    fotoIngreso = clientes[editingIndex].fotoIngreso;
+                }
 
-            const cliente = {
-                nombre: nombre,
-                telefono: telefono,
-                tipoAuto: tipoAuto,
-                patente: patente,
-                trabajo: trabajo,
-                fechaIngreso: fechaIngreso,
-                fechaSalida: fechaSalida,
-                costoRepuestos: parseFloat(document.getElementById('costoRepuestos').value) || 0,
-                montoCobrado: parseFloat(document.getElementById('montoCobrado').value) || 0,
-                fotoIngreso: fotoIngreso,
-                completado: false
-            };
-            if (editingIndex >= 0) {
-                const id = clientes[editingIndex].id;
-                await db.collection('clientes').doc(id).set(cliente);
-                editingIndex = -1;
-            } else {
-                const docRef = await db.collection('clientes').add(cliente);
+                const cliente = {
+                    nombre: nombre,
+                    telefono: telefono,
+                    tipoAuto: tipoAuto,
+                    patente: patente,
+                    trabajo: trabajo,
+                    fechaIngreso: fechaIngreso,
+                    fechaSalida: fechaSalida,
+                    costoRepuestos: parseFloat(document.getElementById('costoRepuestos').value) || 0,
+                    montoCobrado: parseFloat(document.getElementById('montoCobrado').value) || 0,
+                    fotoIngreso: fotoIngreso,
+                    completado: editingIndex >= 0 ? clientes[editingIndex].completado : false
+                };
+
+                if (editingIndex >= 0) {
+                    const id = clientes[editingIndex].id;
+                    await db.collection('clientes').doc(id).set(cliente);
+                    editingIndex = -1;
+                } else {
+                    await db.collection('clientes').add(cliente);
+                }
+                
+                updateCounts();
+                showClientes();
+            } catch (e) {
+                console.error('Error en agregarOEditarCliente:', e);
             }
-            updateCounts();
-            showClientes();
-        } catch(e) {
-            console.error('error en agregarOEditarCliente', e);
         }
 
         function editarCliente(i) {
@@ -255,122 +286,207 @@
             showClientes();
         }
 
-        async function eliminarCliente(i) {
-            const id = clientes[i].id;
-            await db.collection('clientes').doc(id).delete();
-            updateCounts();
-            showClientes();
-        }
-
-        async function toggleCompletado(i) {
-            const c = clientes[i];
-            c.completado = !c.completado;
-            await db.collection('clientes').doc(c.id).update({completado: c.completado});
-            updateCounts();
-            showClientes();
-        }
-
-        async function loadClientes() {
-            const snapshot = await db.collection('clientes').get();
-            clientes = snapshot.docs.map(doc => ({id: doc.id, ...doc.data()}));
-        }
-
-        async function loadPagos() {
-            const snapshot = await db.collection('pagos').get();
-            pagosEmpleados = snapshot.docs.map(d => ({id: d.id, ...d.data()}));
-        }
-
-        async function updateCounts() {
-            await loadClientes();
-            await loadPagos();
-            document.getElementById('clientCount').innerText = clientes.length;
-            document.getElementById('serviceCount').innerText = clientes.filter(c => !c.completado).length;
-            const totalGanancia = clientes.filter(c => c.completado).reduce((sum, c) => sum + ((c.montoCobrado || 0) - (c.costoRepuestos || 0)), 0);
-            const totalPagos = pagosEmpleados.reduce((sum, p) => sum + (p.montoPago || 0), 0);
-            document.getElementById('totalIncome').innerText = '$' + (totalGanancia - totalPagos).toFixed(2);
-            document.getElementById('totalPagos').innerText = '$' + totalPagos.toFixed(2);
-        }
-
-        function cancelarEdicion() {
+        function cancelarEdicionCliente() {
             editingIndex = -1;
             showClientes();
         }
 
         function cargarDatosCliente(i) {
-            const c = clientes[i];
-            document.getElementById('nombreCliente').value = c.nombre;
-            document.getElementById('telefonoCliente').value = c.telefono;
-            document.getElementById('tipoAuto').value = c.tipoAuto || '';
-            document.getElementById('patente').value = c.patente || '';
-            document.getElementById('trabajo').value = c.trabajo || '';
-            document.getElementById('fechaIngreso').value = c.fechaIngreso || '';
-            document.getElementById('fechaSalida').value = c.fechaSalida || '';
-            document.getElementById('costoRepuestos').value = c.costoRepuestos || '';
-            document.getElementById('montoCobrado').value = c.montoCobrado || '';
-            document.getElementById('fotoPreview').innerHTML = c.fotoIngreso ? '<img src="' + c.fotoIngreso + '" width="100" height="100">' : '';
+            try {
+                const c = clientes[i];
+                document.getElementById('nombreCliente').value = c.nombre || '';
+                document.getElementById('telefonoCliente').value = c.telefono || '';
+                document.getElementById('tipoAuto').value = c.tipoAuto || '';
+                document.getElementById('patente').value = c.patente || '';
+                document.getElementById('trabajo').value = c.trabajo || '';
+                document.getElementById('fechaIngreso').value = c.fechaIngreso || '';
+                document.getElementById('fechaSalida').value = c.fechaSalida || '';
+                document.getElementById('costoRepuestos').value = c.costoRepuestos || '';
+                document.getElementById('montoCobrado').value = c.montoCobrado || '';
+                const preview = document.getElementById('fotoPreview');
+                if (preview) {
+                    preview.innerHTML = c.fotoIngreso ? '<img src="' + c.fotoIngreso + '" width="100" height="100">' : '';
+                }
+            } catch (e) {
+                console.error('Error cargando datos:', e);
+            }
         }
 
+        async function eliminarCliente(i) {
+            try {
+                if (confirm('¿Estás seguro?')) {
+                    const id = clientes[i].id;
+                    await db.collection('clientes').doc(id).delete();
+                    updateCounts();
+                    showClientes();
+                }
+            } catch (e) {
+                console.error('Error eliminando:', e);
+            }
+        }
+
+        async function toggleCompletado(i) {
+            try {
+                const c = clientes[i];
+                c.completado = !c.completado;
+                await db.collection('clientes').doc(c.id).update({ completado: c.completado });
+                updateCounts();
+                showClientes();
+            } catch (e) {
+                console.error('Error toggleando:', e);
+            }
+        }
 
         function exportarClientePDF(i) {
-            const c = clientes[i];
-            const { jsPDF } = window.jspdf;
-            const doc = new jsPDF();
-            doc.text(`Reporte de Cliente: ${c.nombre}`, 10, 10);
-            doc.text(`Teléfono: ${c.telefono}`, 10, 20);
-            doc.text(`Tipo de Auto: ${c.tipoAuto || ''}`, 10, 30);
-            doc.text(`Patente: ${c.patente || ''}`, 10, 40);
-            doc.text(`Trabajo Realizado: ${c.trabajo || ''}`, 10, 50);
-            doc.text(`Fecha de Ingreso: ${c.fechaIngreso || ''}`, 10, 60);
-            doc.text(`Fecha de Salida: ${c.fechaSalida || ''}`, 10, 70);
-            doc.text(`Costo de Repuestos: $${c.costoRepuestos || 0}`, 10, 80);
-            doc.text(`Monto Cobrado: $${c.montoCobrado || 0}`, 10, 90);
-            doc.text(`Completado: ${c.completado ? 'Sí' : 'No'}`, 10, 100);
-            if (c.fotoIngreso) {
-                doc.addImage(c.fotoIngreso, 'JPEG', 10, 110, 50, 50);
+            try {
+                const c = clientes[i];
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF();
+                doc.text('Reporte: ' + c.nombre, 10, 10);
+                doc.text('Tel: ' + c.telefono, 10, 20);
+                doc.text('Auto: ' + (c.tipoAuto || ''), 10, 30);
+                doc.text('Patente: ' + (c.patente || ''), 10, 40);
+                doc.text('Trabajo: ' + (c.trabajo || ''), 10, 50);
+                doc.text('F.Ingreso: ' + (c.fechaIngreso || ''), 10, 60);
+                doc.text('F.Salida: ' + (c.fechaSalida || ''), 10, 70);
+                doc.text('Costo: $' + (c.costoRepuestos || 0), 10, 80);
+                doc.text('Cobrado: $' + (c.montoCobrado || 0), 10, 90);
+                doc.save(c.nombre + '.pdf');
+            } catch (e) {
+                console.error('Error PDF:', e);
             }
-            doc.save(`${c.nombre}_reporte.pdf`);
         }
 
-        let editingPagoIndex = -1;
+        async function showServicios() {
+            try {
+                await loadClientes();
+                let content = '<h3>Servicios Pendientes</h3>';
+                const pendientes = clientes.filter(c => !c.completado);
+                
+                if (pendientes.length === 0) {
+                    content += '<p>No hay servicios pendientes.</p>';
+                } else {
+                    content += '<table><tr><th>Nombre</th><th>Tel</th><th>Auto</th><th>Trabajo</th><th>F.Ingreso</th><th>Costo</th><th>Monto</th></tr>';
+                    pendientes.forEach(c => {
+                        content += '<tr><td>' + c.nombre + '</td><td>' + c.telefono + '</td><td>' + (c.tipoAuto || '') + '</td><td>' + (c.trabajo || '') + '</td><td>' + (c.fechaIngreso || '') + '</td><td>$' + (c.costoRepuestos || 0) + '</td><td>$' + (c.montoCobrado || 0) + '</td></tr>';
+                    });
+                    content += '</table>';
+                }
+                document.getElementById('content').innerHTML = content;
+            } catch (e) {
+                console.error('Error en showServicios:', e);
+            }
+        }
+
+        async function showIngresos() {
+            try {
+                await loadClientes();
+                await loadPagos();
+                const completados = clientes.filter(c => c.completado);
+                const totalCostoRepuestos = completados.reduce((sum, c) => sum + (c.costoRepuestos || 0), 0);
+                const totalMontoCobrado = completados.reduce((sum, c) => sum + (c.montoCobrado || 0), 0);
+                const totalGanancia = completados.reduce((sum, c) => sum + ((c.montoCobrado || 0) - (c.costoRepuestos || 0)), 0);
+                
+                const datosPorMes = {};
+                completados.forEach(c => {
+                    if (c.fechaSalida) {
+                        const mes = c.fechaSalida.substring(0, 7);
+                        if (!datosPorMes[mes]) {
+                            datosPorMes[mes] = { cobrado: 0, repuestos: 0, ganancia: 0 };
+                        }
+                        datosPorMes[mes].cobrado += c.montoCobrado || 0;
+                        datosPorMes[mes].repuestos += c.costoRepuestos || 0;
+                        datosPorMes[mes].ganancia += (c.montoCobrado || 0) - (c.costoRepuestos || 0);
+                    }
+                });
+
+                const pagosPorMes = {};
+                pagosEmpleados.forEach(p => {
+                    if (p.fechaPago) {
+                        const mes = p.fechaPago.substring(0, 7);
+                        pagosPorMes[mes] = (pagosPorMes[mes] || 0) + (p.montoPago || 0);
+                    }
+                });
+                
+                let content = '<h3>Ingresos Totales</h3>';
+                content += '<p>Costo Repuestos: $' + totalCostoRepuestos.toFixed(2) + '</p>';
+                content += '<p>Monto Cobrado: $' + totalMontoCobrado.toFixed(2) + '</p>';
+                content += '<p>Ganancia Bruta: $' + totalGanancia.toFixed(2) + '</p>';
+                
+                const totalPagos = pagosEmpleados.reduce((sum, p) => sum + (p.montoPago || 0), 0);
+                content += '<p>Pagos a Empleados: $' + totalPagos.toFixed(2) + '</p>';
+                content += '<p><strong>Ganancia Neta: $' + (totalGanancia - totalPagos).toFixed(2) + '</strong></p>';
+                
+                content += '<h4>Ganancias por Mes</h4>';
+                if (Object.keys(datosPorMes).length === 0) {
+                    content += '<p>Sin datos.</p>';
+                } else {
+                    content += '<table><tr><th>Mes</th><th>Cobrado</th><th>Repuestos</th><th>Pagos</th><th>Neta</th></tr>';
+                    Object.keys(datosPorMes).sort().forEach(mes => {
+                        const d = datosPorMes[mes];
+                        const pagosMes = pagosPorMes[mes] || 0;
+                        const gananciaNeta = d.ganancia - pagosMes;
+                        content += '<tr><td>' + mes + '</td><td>$' + d.cobrado.toFixed(2) + '</td><td>$' + d.repuestos.toFixed(2) + '</td><td>$' + pagosMes.toFixed(2) + '</td><td>$' + gananciaNeta.toFixed(2) + '</td></tr>';
+                    });
+                    content += '</table>';
+                }
+                document.getElementById('content').innerHTML = content;
+            } catch (e) {
+                console.error('Error en showIngresos:', e);
+            }
+        }
 
         async function showPagos() {
-            // cargar pagos desde Firestore
-            const snapshot = await db.collection('pagos').get();
-            pagosEmpleados = snapshot.docs.map(d => ({id: d.id, ...d.data()}));
-
-            let content = '<h3>Gestión de Pagos a Empleados</h3>';
-            content += '<input type="date" id="fechaPago" placeholder="Fecha de pago"><br><br>';
-            content += '<input type="number" id="montoPago" placeholder="Monto del pago" step="0.01"><br><br>';
-            content += '<button onclick="agregarOEditarPago()">' + (editingPagoIndex >= 0 ? 'Guardar Cambios' : 'Agregar Pago') + '</button>';
-            if (editingPagoIndex >= 0) {
-                content += ' <button onclick="cancelarEdicionPago()">Cancelar</button>';
-            }
-            content += '<br><br>';
-            content += '<table><tr><th>Fecha de Pago</th><th>Monto</th><th>Acciones</th></tr>';
-            pagosEmpleados.forEach((p, i) => {
-                content += `<tr><td>${p.fechaPago || ''}</td><td>$${p.montoPago || 0}</td><td><button onclick="editarPago(${i})">Editar</button><br><button onclick="eliminarPago(${i})">Eliminar</button></td></tr>`;
-            });
-            content += '</table>';
-            document.getElementById('content').innerHTML = content;
-            if (editingPagoIndex >= 0) {
-                cargarDatosPago(editingPagoIndex);
+            try {
+                await loadPagos();
+                let content = '<h3>Gestión de Pagos a Empleados</h3>';
+                content += '<input type="date" id="fechaPago" placeholder="Fecha de pago"><br>';
+                content += '<input type="number" id="montoPago" placeholder="Monto del pago" step="0.01"><br>';
+                content += '<button onclick="agregarOEditarPago()">' + (editingPagoIndex >= 0 ? 'Guardar' : 'Agregar') + '</button>';
+                if (editingPagoIndex >= 0) {
+                    content += ' <button onclick="cancelarEdicionPago()">Cancelar</button>';
+                }
+                content += '<br><br>';
+                content += '<table><tr><th>Fecha</th><th>Monto</th><th>Acciones</th></tr>';
+                
+                pagosEmpleados.forEach((p, i) => {
+                    content += '<tr><td>' + (p.fechaPago || '') + '</td><td>$' + (p.montoPago || 0) + '</td><td><button onclick="editarPago(' + i + ')">Edit</button> <button onclick="eliminarPago(' + i + ')">Del</button></td></tr>';
+                });
+                content += '</table>';
+                document.getElementById('content').innerHTML = content;
+                
+                if (editingPagoIndex >= 0) {
+                    cargarDatosPago(editingPagoIndex);
+                }
+            } catch (e) {
+                console.error('Error en showPagos:', e);
             }
         }
 
         async function agregarOEditarPago() {
-            const pago = {
-                fechaPago: document.getElementById('fechaPago').value,
-                montoPago: parseFloat(document.getElementById('montoPago').value) || 0
-            };
-            if (editingPagoIndex >= 0) {
-                const id = pagosEmpleados[editingPagoIndex].id;
-                await db.collection('pagos').doc(id).set(pago);
-                editingPagoIndex = -1;
-            } else {
-                await db.collection('pagos').add(pago);
+            try {
+                const pago = {
+                    fechaPago: document.getElementById('fechaPago').value,
+                    montoPago: parseFloat(document.getElementById('montoPago').value) || 0
+                };
+                
+                if (!pago.fechaPago || pago.montoPago <= 0) {
+                    alert('Complete los campos');
+                    return;
+                }
+                
+                if (editingPagoIndex >= 0) {
+                    const id = pagosEmpleados[editingPagoIndex].id;
+                    await db.collection('pagos').doc(id).set(pago);
+                    editingPagoIndex = -1;
+                } else {
+                    await db.collection('pagos').add(pago);
+                }
+                updateCounts();
+                showPagos();
+            } catch (e) {
+                console.error('Error en pago:', e);
             }
-            updateCounts();
-            showPagos();
         }
 
         function editarPago(i) {
@@ -384,90 +500,29 @@
         }
 
         function cargarDatosPago(i) {
-            const p = pagosEmpleados[i];
-            document.getElementById('fechaPago').value = p.fechaPago || '';
-            document.getElementById('montoPago').value = p.montoPago || '';
+            try {
+                const p = pagosEmpleados[i];
+                document.getElementById('fechaPago').value = p.fechaPago || '';
+                document.getElementById('montoPago').value = p.montoPago || '';
+            } catch (e) {
+                console.error('Error cargando pago:', e);
+            }
         }
 
         async function eliminarPago(i) {
-            const id = pagosEmpleados[i].id;
-            await db.collection('pagos').doc(id).delete();
-            updateCounts();
-            showPagos();
-        }
-
-        async function showServicios() {
-            await loadClientes();
-            let content = '<h3>Servicios Pendientes</h3>';
-            const pendientes = clientes.filter(c => !c.completado);
-            if (pendientes.length === 0) {
-                content += '<p>No hay servicios pendientes.</p>';
-            } else {
-                content += '<table><tr><th>Nombre</th><th>Teléfono</th><th>Tipo de Auto</th><th>Trabajo</th><th>Fecha Ingreso</th><th>Costo Repuestos</th><th>Monto Cobrado</th></tr>';
-                pendientes.forEach(c => {
-                    content += `<tr><td>${c.nombre}</td><td>${c.telefono}</td><td>${c.tipoAuto || ''}</td><td>${c.trabajo || ''}</td><td>${c.fechaIngreso || ''}</td><td>$${c.costoRepuestos || 0}</td><td>$${c.montoCobrado || 0}</td></tr>`;
-                });
-                content += '</table>';
-            }
-            document.getElementById('content').innerHTML = content;
-        }
-
-        async function showIngresos() {
-            await loadClientes();
-            await loadPagos();
-            const completados = clientes.filter(c => c.completado);
-            const totalCostoRepuestos = completados.reduce((sum, c) => sum + (c.costoRepuestos || 0), 0);
-            const totalMontoCobrado = completados.reduce((sum, c) => sum + (c.montoCobrado || 0), 0);
-            const totalGanancia = completados.reduce((sum, c) => sum + ((c.montoCobrado || 0) - (c.costoRepuestos || 0)), 0);
-            
-            // Ganancias por mes
-            const datosPorMes = {};
-            completados.forEach(c => {
-                if (c.fechaSalida) {
-                    const mes = c.fechaSalida.substring(0, 7); // YYYY-MM
-                    if (!datosPorMes[mes]) {
-                        datosPorMes[mes] = { cobrado: 0, repuestos: 0, ganancia: 0 };
-                    }
-                    datosPorMes[mes].cobrado += c.montoCobrado || 0;
-                    datosPorMes[mes].repuestos += c.costoRepuestos || 0;
-                    datosPorMes[mes].ganancia += (c.montoCobrado || 0) - (c.costoRepuestos || 0);
+            try {
+                if (confirm('¿Estás seguro?')) {
+                    const id = pagosEmpleados[i].id;
+                    await db.collection('pagos').doc(id).delete();
+                    updateCounts();
+                    showPagos();
                 }
-            });
-            // Pagos por mes
-            const pagosPorMes = {};
-            pagosEmpleados.forEach(p => {
-                if (p.fechaPago) {
-                    const mes = p.fechaPago.substring(0, 7);
-                    pagosPorMes[mes] = (pagosPorMes[mes] || 0) + (p.montoPago || 0);
-                }
-            });
-            
-            let content = '<h3>Ingresos Totales</h3>';
-            content += `<p>Total Costo de Repuestos: $${totalCostoRepuestos.toFixed(2)}</p>`;
-            content += `<p>Total Monto Cobrado: $${totalMontoCobrado.toFixed(2)}</p>`;
-            content += `<p>Total Ganancia Bruta: $${totalGanancia.toFixed(2)}</p>`;
-            const totalPagos = pagosEmpleados.reduce((sum, p) => sum + (p.montoPago || 0), 0);
-            content += `<p>Total Pagos a Empleados: $${totalPagos.toFixed(2)}</p>`;
-            content += `<p>Ganancia Neta: $${(totalGanancia - totalPagos).toFixed(2)}</p>`;
-            content += '<h4>Ganancias por Mes</h4>';
-            if (Object.keys(datosPorMes).length === 0) {
-                content += '<p>No hay datos de ganancias por mes.</p>';
-            } else {
-                content += '<table><tr><th>Mes</th><th>Total Cobrado</th><th>Total Repuestos</th><th>Total Pagos Empleados</th><th>Ganancia Neta</th></tr>';
-                Object.keys(datosPorMes).sort().forEach(mes => {
-                    const d = datosPorMes[mes];
-                    const pagosMes = pagosPorMes[mes] || 0;
-                    const gananciaNeta = d.ganancia - pagosMes;
-                    content += `<tr><td>${mes}</td><td>$${d.cobrado.toFixed(2)}</td><td>$${d.repuestos.toFixed(2)}</td><td>$${pagosMes.toFixed(2)}</td><td>$${gananciaNeta.toFixed(2)}</td></tr>`;
-                });
-                content += '</table>';
+            } catch (e) {
+                console.error('Error eliminando pago:', e);
             }
-            document.getElementById('content').innerHTML = content;
         }
 
-        updateCounts().then(showClientes);
+        updateCounts();
     </script>
-</body>
-</html>
 </body>
 </html>
